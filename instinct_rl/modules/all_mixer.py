@@ -4,6 +4,7 @@ from .actor_critic import ActorCritic
 from .actor_critic_recurrent import ActorCriticRecurrent
 from .encoder_actor_critic import EncoderActorCriticMixin
 from .moe_actor_critic import MoEActorCritic
+from .rssm_actor_critic import RSSMActorCriticMixin
 from .state_estimator import EstimatorMixin
 from .vae_actor_critic import VaeActorCritic
 
@@ -18,6 +19,10 @@ class EncoderStateAcRecurrent(EstimatorMixin, EncoderActorCriticMixin, ActorCrit
 
 
 class EncoderMoEActorCritic(EncoderActorCriticMixin, MoEActorCritic):
+    pass
+
+
+class RSSMEncoderMoEActorCritic(RSSMActorCriticMixin, EncoderActorCriticMixin, MoEActorCritic):
     pass
 
 

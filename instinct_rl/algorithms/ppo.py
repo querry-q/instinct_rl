@@ -166,13 +166,25 @@ class PPO:
             self.transition.hidden_states = self.actor_critic.get_hidden_states()
         # Compute the actions and values
         self.transition.actions = self.actor_critic.act(obs).detach()
-        self.transition.values = self.actor_critic.evaluate(critic_obs if critic_obs is not None else obs).detach()
+        rssm_features = (
+            self.actor_critic.get_and_clear_last_rssm_feature()
+            if hasattr(self.actor_critic, "get_and_clear_last_rssm_feature")
+            else None
+        )
+        if rssm_features is None:
+            self.transition.values = self.actor_critic.evaluate(critic_obs if critic_obs is not None else obs).detach()
+        else:
+            self.transition.values = self.actor_critic.evaluate(
+                critic_obs if critic_obs is not None else obs,
+                rssm_features=rssm_features,
+            ).detach()
         self.transition.actions_log_prob = self.actor_critic.get_actions_log_prob(self.transition.actions).detach()
         self.transition.action_mean = self.actor_critic.action_mean.detach()
         self.transition.action_sigma = self.actor_critic.action_std.detach()
         # need to record obs and critic_obs before env.step()
         self.transition.observations = obs
         self.transition.critic_observations = critic_obs
+        self.transition.rssm_features = rssm_features
         return self.transition.actions
 
     def process_env_step(self, rewards, dones, infos, next_obs, next_critic_obs):
@@ -277,13 +289,28 @@ class PPO:
             target_values_batch = target_values_batch.repeat(num_aug, 1)
             advantages_batch = advantages_batch.repeat(num_aug, 1)
             returns_batch = returns_batch.repeat(num_aug, 1)
+            if minibatch.rssm_features is not None:
+                minibatch = minibatch._replace(rssm_features=minibatch.rssm_features.repeat(num_aug, 1))
 
-        self.actor_critic.act(obs_batch, masks=minibatch.masks, hidden_states=actor_hidden_states)
+        self.actor_critic.act(
+            obs_batch,
+            masks=minibatch.masks,
+            hidden_states=actor_hidden_states,
+            rssm_features=minibatch.rssm_features,
+        )
         actions_log_prob_batch = self.actor_critic.get_actions_log_prob(actions_batch)
         critic_hidden_states = minibatch.hidden_states.critic if self.actor_critic.is_recurrent else None
-        value_batch = self.actor_critic.evaluate(
-            critic_obs_batch, masks=minibatch.masks, hidden_states=critic_hidden_states
-        )
+        if minibatch.rssm_features is None:
+            value_batch = self.actor_critic.evaluate(
+                critic_obs_batch, masks=minibatch.masks, hidden_states=critic_hidden_states
+            )
+        else:
+            value_batch = self.actor_critic.evaluate(
+                critic_obs_batch,
+                masks=minibatch.masks,
+                hidden_states=critic_hidden_states,
+                rssm_features=minibatch.rssm_features,
+            )
         mu_batch = self.actor_critic.action_mean[:original_batch_size]
         sigma_batch = self.actor_critic.action_std[:original_batch_size]
         try:
@@ -366,8 +393,16 @@ class PPO:
                     obs_type="policy",
                 )
                 num_aug = int(obs_batch.shape[0] / original_batch_size)
+                if minibatch.rssm_features is not None:
+                    minibatch = minibatch._replace(rssm_features=minibatch.rssm_features.repeat(num_aug, 1))
 
-            mean_actions_batch = self.actor_critic.act_inference(obs_batch.detach().clone())
+            if minibatch.rssm_features is None:
+                mean_actions_batch = self.actor_critic.act_inference(obs_batch.detach().clone())
+            else:
+                mean_actions_batch = self.actor_critic.act_inference(
+                    obs_batch.detach().clone(),
+                    rssm_features=minibatch.rssm_features,
+                )
             action_mean_orig = mean_actions_batch[:original_batch_size]
             _, actions_mean_symm_batch = data_augmentation_func(
                 env=self.symmetry["_env"],

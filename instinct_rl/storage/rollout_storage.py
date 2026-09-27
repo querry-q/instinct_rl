@@ -54,6 +54,7 @@ class RolloutStorage:
             self.actions_log_prob = None
             self.action_mean = None
             self.action_sigma = None
+            self.rssm_features = None
             self.hidden_states = None
 
         def clear(self):
@@ -71,6 +72,7 @@ class RolloutStorage:
             "old_actions_log_prob",
             "old_mu",
             "old_sigma",
+            "rssm_features",
             "hidden_states",
             "masks",
         ],
@@ -105,6 +107,7 @@ class RolloutStorage:
         self.advantages = torch.zeros(num_transitions_per_env, num_envs, num_rewards, device=self.device)
         self.mu = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
         self.sigma = torch.zeros(num_transitions_per_env, num_envs, *actions_shape, device=self.device)
+        self.rssm_features = None
 
         self.num_transitions_per_env = num_transitions_per_env
         self.num_envs = num_envs
@@ -127,6 +130,15 @@ class RolloutStorage:
         self.actions_log_prob[self.step].copy_(transition.actions_log_prob.view(-1, 1))
         self.mu[self.step].copy_(transition.action_mean)
         self.sigma[self.step].copy_(transition.action_sigma)
+        if transition.rssm_features is not None:
+            if self.rssm_features is None:
+                self.rssm_features = torch.zeros(
+                    self.num_transitions_per_env,
+                    self.num_envs,
+                    transition.rssm_features.shape[-1],
+                    device=self.device,
+                )
+            self.rssm_features[self.step].copy_(transition.rssm_features)
         self._save_hidden_states(transition.hidden_states)
         self.step += 1
 
@@ -271,6 +283,7 @@ class RolloutStorage:
         advantage_batch = self.advantages[T_select, B_select]
         old_mu_batch = self.mu[T_select, B_select]
         old_sigma_batch = self.sigma[T_select, B_select]
+        rssm_features_batch = self.rssm_features[T_select, B_select] if self.rssm_features is not None else None
 
         return RolloutStorage.MiniBatch(
             obs_batch,
@@ -282,6 +295,7 @@ class RolloutStorage:
             old_action_log_prob_batch,
             old_mu_batch,
             old_sigma_batch,
+            rssm_features_batch,
             hid_batch,
             obs_mask_batch,
         )

@@ -9,6 +9,7 @@ from .all_mixer import (
     EncoderStateAc,
     EncoderStateAcRecurrent,
     EncoderVaeActorCritic,
+    RSSMEncoderMoEActorCritic,
 )
 from .discriminator import Discriminator
 from .encoder_actor_critic import EncoderActorCritic, EncoderActorCriticRecurrent
